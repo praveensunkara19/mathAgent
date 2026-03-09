@@ -154,41 +154,52 @@ col1, col2 = st.columns([4,1])
 
 with col2:
 
+    # INPUT MODE
     mode = st.selectbox(
-        "Input",
+        "Choose Input Type",
         ["Text", "Image", "PDF", "Voice"]
     )
 
+    # store extracted text
+    if "problem_text" not in st.session_state:
+        st.session_state.problem_text = ""
 
-user_input = None
 
-
-
-# TEXT 
+# TEXT INPUT
 if mode == "Text":
 
-    user_input = st.chat_input("Ask a math question...")
+    st.session_state.problem_text = st.text_area(
+        "Enter Math Problem",
+        value=st.session_state.problem_text,
+        height=150
+    )
+
 
 
 # IMAGE 
 elif mode == "Image":
 
     image = st.file_uploader(
-        "Upload Image",
-        type=["png", "jpg", "jpeg"]
+        "Upload math problem image",
+        type=["png","jpg","jpeg"]
     )
 
     if image:
 
         extracted = upload_image(image)
 
-        user_input = st.text_area(
-            "Edit extracted text",
-            value=extracted
-        )
+        st.success("Text extracted from image")
+
+        st.session_state.problem_text = extracted
+
+    st.session_state.problem_text = st.text_area(
+        "Extracted Problem (Editable)",
+        value=st.session_state.problem_text,
+        height=200
+    )
 
 
-# PDF 
+# PDF
 elif mode == "PDF":
 
     pdf = st.file_uploader("Upload problem PDF", type=["pdf"])
@@ -197,16 +208,21 @@ elif mode == "PDF":
 
         extracted = upload_file(pdf)
 
-        user_input = st.text_area(
-            "Edit extracted text",
-            value=extracted
-        )
+        st.success("Text extracted from PDF")
+
+        st.session_state.problem_text = extracted
+
+    st.session_state.problem_text = st.text_area(
+        "Extracted Problem (Editable)",
+        value=st.session_state.problem_text,
+        height=200
+    )
 
 
 # VOICE 
 elif mode == "Voice":
 
-    st.write("🎤 Record voice")
+    st.write("Record voice")
 
     audio_bytes = audio_recorder()
 
@@ -218,21 +234,33 @@ elif mode == "Voice":
 
         extracted = record_voice(buffer)
 
-        user_input = st.text_area(
-            "Edit transcription",
-            value=extracted
-        )
+        st.success("Voice transcribed")
+
+        st.session_state.problem_text = extracted
+
+    st.session_state.problem_text = st.text_area(
+        "Transcribed Problem (Editable)",
+        value=st.session_state.problem_text,
+        height=200
+    )
 
 
-# SOLVE PROBLEM
-if user_input:
+# SOLVE 
+if st.button("Solve Problem"):
 
+    problem = st.session_state.problem_text.strip()
+
+    if not problem:
+        st.warning("Please enter or extract a math problem first.")
+        st.stop()
+
+    # show user message
     st.session_state.messages.append(
-        {"role": "user", "content": user_input}
+        {"role": "user", "content": problem}
     )
 
     with st.chat_message("user"):
-        st.markdown(user_input)
+        st.markdown(problem)
 
 
     # AUTO UPDATE KB
@@ -240,26 +268,27 @@ if user_input:
 
     if current_hashes != st.session_state.kb_hashes:
 
-        with st.spinner("Updating knowledge base..."):
-
+        with st.spinner("Updating Knowledge Base..."):
             update_kb(DATA_DIR)
 
         st.session_state.kb_hashes = current_hashes
 
+        st.sidebar.success("Knowledge Base Updated")
+
 
     # RUN AGENT
-    with st.spinner("Solving..."):
+    with st.spinner("Solving problem..."):
 
         result = chain.invoke(
             {
-                "data": user_input,
+                "data": problem,
                 "history": st.session_state.history
             },
             config=thread_config
         )
 
 
-    # INTERRUPT HANDLING
+    # HANDLE INTERRUPT
     if "__interrupt__" in result:
 
         interrupt_data = result["__interrupt__"][0].value
@@ -282,35 +311,32 @@ if user_input:
             )
 
 
-    # DISPLAY RESULT
+    # DISPLAY RESPONSE
     with st.chat_message("assistant"):
 
         if "solution" in result:
 
-            st.markdown("### ✅ Solution")
+            st.markdown("### Solution")
 
             try:
                 st.latex(result["solution"])
             except:
                 st.markdown(result["solution"])
 
-
         if "explanation" in result:
 
-            st.markdown("### 📖 Explanation")
+            st.markdown("### Explanation")
+
             st.markdown(result["explanation"])
 
-
-        # SOURCES BUTTON
         if result.get("rag_sources"):
 
-            with st.expander("📚 Sources"):
+            st.markdown("### Sources")
 
-                for src in result["rag_sources"]:
-                    st.write(f"- {src}")
+            for src in result["rag_sources"]:
+                st.markdown(f"- {src}")
 
 
-    # SAVE RESPONSE
     st.session_state.messages.append(
         {
             "role": "assistant",
